@@ -29,6 +29,7 @@ const LoginScreen = ({ onNavigate }) => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       Alert.alert('Success', 'Logged in successfully!');
+      onNavigate('HomeScreen');
     } catch (error) {
       let errorMessage = 'Login failed';
       if (error.code === 'auth/user-not-found') {

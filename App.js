@@ -11,6 +11,7 @@ import EditShoeScreen from './screens/EditShoeScreen';
 import WishlistScreen from './screens/WishlistScreen';
 import CartScreen from './screens/CartScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import CheckoutScreen from './screens/CheckoutScreen';
 
 const App = () => {
   const [currentScreen, setCurrentScreen] = useState('home'); // Start with home (guest mode)
@@ -67,7 +68,9 @@ const App = () => {
   if (currentScreen === 'profile') {
     return <ProfileScreen onNavigate={navigateToScreen} user={user} />;
   }
-
+ if (currentScreen === 'checkout') {
+    return <CheckoutScreen onNavigate={navigateToScreen} user={user} />;
+  }
   return <HomeScreen onNavigate={navigateToScreen} user={user} />;
 };
 

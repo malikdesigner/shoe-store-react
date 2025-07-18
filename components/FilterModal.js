@@ -1,4 +1,3 @@
-
 // components/FilterModal.js
 import React from 'react';
 import {
@@ -17,7 +16,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, uniqueValues }) =>
   const genders = ['men', 'women', 'unisex', 'kids'];
   const ageGroups = ['adult', 'youth', 'child', 'toddler', 'infant'];
   const seasons = ['all-season', 'summer', 'winter', 'spring', 'fall'];
-  const styles_list = ['casual', 'formal', 'athletic', 'vintage', 'modern', 'luxury'];
+  const shoeStyles = ['casual', 'formal', 'athletic', 'vintage', 'modern', 'luxury']; // FIXED: Renamed from styles_list
 
   const updateFilter = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -47,7 +46,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, uniqueValues }) =>
       styles: [],
       rating: 0,
       featured: false,
-      inStock: true,
+      inStock: false, // FIXED: Set to false by default so all shoes show
     });
   };
 
@@ -115,33 +114,69 @@ const FilterModal = ({ visible, onClose, filters, setFilters, uniqueValues }) =>
             <Text style={styles.sectionTitle}>Price Range</Text>
             <View style={styles.priceContainer}>
               <Text style={styles.priceLabel}>
-                ${filters.priceRange.min} - ${filters.priceRange.max}
+                ${filters.priceRange.min} - ${filters.priceRange.max === 1000 ? '1000+' : filters.priceRange.max}
               </Text>
             </View>
             <View style={styles.priceInputContainer}>
               <TouchableOpacity
-                style={styles.priceButton}
-                onPress={() => updateFilter('priceRange', { ...filters.priceRange, min: 0 })}
+                style={[
+                  styles.priceButton,
+                  filters.priceRange.min === 0 && filters.priceRange.max === 1000 && styles.selectedPriceButton
+                ]}
+                onPress={() => updateFilter('priceRange', { min: 0, max: 1000 })}
               >
-                <Text style={styles.priceButtonText}>$0</Text>
+                <Text style={[
+                  styles.priceButtonText,
+                  filters.priceRange.min === 0 && filters.priceRange.max === 1000 && styles.selectedPriceButtonText
+                ]}>All Prices</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.priceButton}
-                onPress={() => updateFilter('priceRange', { ...filters.priceRange, max: 100 })}
+                style={[
+                  styles.priceButton,
+                  filters.priceRange.min === 0 && filters.priceRange.max === 50 && styles.selectedPriceButton
+                ]}
+                onPress={() => updateFilter('priceRange', { min: 0, max: 50 })}
               >
-                <Text style={styles.priceButtonText}>$100</Text>
+                <Text style={[
+                  styles.priceButtonText,
+                  filters.priceRange.min === 0 && filters.priceRange.max === 50 && styles.selectedPriceButtonText
+                ]}>Under $50</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.priceButton}
-                onPress={() => updateFilter('priceRange', { ...filters.priceRange, max: 200 })}
+                style={[
+                  styles.priceButton,
+                  filters.priceRange.min === 50 && filters.priceRange.max === 100 && styles.selectedPriceButton
+                ]}
+                onPress={() => updateFilter('priceRange', { min: 50, max: 100 })}
               >
-                <Text style={styles.priceButtonText}>$200</Text>
+                <Text style={[
+                  styles.priceButtonText,
+                  filters.priceRange.min === 50 && filters.priceRange.max === 100 && styles.selectedPriceButtonText
+                ]}>$50 - $100</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.priceButton}
-                onPress={() => updateFilter('priceRange', { ...filters.priceRange, max: 1000 })}
+                style={[
+                  styles.priceButton,
+                  filters.priceRange.min === 100 && filters.priceRange.max === 200 && styles.selectedPriceButton
+                ]}
+                onPress={() => updateFilter('priceRange', { min: 100, max: 200 })}
               >
-                <Text style={styles.priceButtonText}>$1000+</Text>
+                <Text style={[
+                  styles.priceButtonText,
+                  filters.priceRange.min === 100 && filters.priceRange.max === 200 && styles.selectedPriceButtonText
+                ]}>$100 - $200</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.priceButton,
+                  filters.priceRange.min === 200 && filters.priceRange.max === 1000 && styles.selectedPriceButton
+                ]}
+                onPress={() => updateFilter('priceRange', { min: 200, max: 1000 })}
+              >
+                <Text style={[
+                  styles.priceButtonText,
+                  filters.priceRange.min === 200 && filters.priceRange.max === 1000 && styles.selectedPriceButtonText
+                ]}>$200+</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -191,7 +226,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, uniqueValues }) =>
           <FilterSection title="Season" items={seasons} filterKey="seasons" />
 
           {/* Styles */}
-          <FilterSection title="Style" items={styles_list} filterKey="styles" />
+          <FilterSection title="Style" items={shoeStyles} filterKey="styles" /> {/* FIXED: Use shoeStyles */}
 
           {/* Colors */}
           {uniqueValues?.colors && uniqueValues.colors.length > 0 && (
@@ -243,9 +278,15 @@ const FilterModal = ({ visible, onClose, filters, setFilters, uniqueValues }) =>
                 ]}
                 onPress={() => updateFilter('featured', !filters.featured)}
               >
+                <Ionicons 
+                  name={filters.featured ? "star" : "star-outline"} 
+                  size={16} 
+                  color={filters.featured ? "#ffffff" : "#6b7280"} 
+                />
                 <Text style={[
                   styles.chipText,
-                  filters.featured && styles.selectedChipText
+                  filters.featured && styles.selectedChipText,
+                  { marginLeft: 4 }
                 ]}>
                   Featured Only
                 </Text>
@@ -258,9 +299,15 @@ const FilterModal = ({ visible, onClose, filters, setFilters, uniqueValues }) =>
                 ]}
                 onPress={() => updateFilter('inStock', !filters.inStock)}
               >
+                <Ionicons 
+                  name={filters.inStock ? "checkmark-circle" : "checkmark-circle-outline"} 
+                  size={16} 
+                  color={filters.inStock ? "#ffffff" : "#6b7280"} 
+                />
                 <Text style={[
                   styles.chipText,
-                  filters.inStock && styles.selectedChipText
+                  filters.inStock && styles.selectedChipText,
+                  { marginLeft: 4 }
                 ]}>
                   In Stock Only
                 </Text>
@@ -336,13 +383,20 @@ const styles = StyleSheet.create({
   priceButton: {
     backgroundColor: '#f3f4f6',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 16,
+    marginBottom: 8,
+  },
+  selectedPriceButton: {
+    backgroundColor: '#2563eb',
   },
   priceButtonText: {
     fontSize: 12,
     color: '#6b7280',
     fontWeight: '500',
+  },
+  selectedPriceButtonText: {
+    color: '#ffffff',
   },
   chipContainer: {
     flexDirection: 'row',
@@ -350,6 +404,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#f3f4f6',
     paddingHorizontal: 16,
     paddingVertical: 8,

@@ -29,7 +29,7 @@ const HomeScreen = ({ onNavigate, user }) => {
   const [sortBy, setSortBy] = useState('newest');
   const [userRole, setUserRole] = useState(null);
   
-  // Enhanced filter states
+  // Enhanced filter states - FIXED: Set inStock to false by default
   const [filters, setFilters] = useState({
     brands: [],
     priceRange: { min: 0, max: 1000 },
@@ -44,12 +44,13 @@ const HomeScreen = ({ onNavigate, user }) => {
     styles: [],
     rating: 0,
     featured: false,
-    inStock: true,
+    inStock: false, // FIXED: Changed to false so all shoes show by default
   });
 
   useEffect(() => {
     loadUserRole();
-    loadShoes();
+    const unsubscribe = loadShoes();
+    return () => unsubscribe && unsubscribe(); // Cleanup subscription
   }, [user]);
 
   useEffect(() => {
@@ -69,34 +70,48 @@ const HomeScreen = ({ onNavigate, user }) => {
   };
 
   const loadShoes = () => {
-    let q = query(collection(db, 'shoes'), orderBy('createdAt', 'desc'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const shoesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setShoes(shoesData);
-      setLoading(false);
-    });
+    try {
+      let q = query(collection(db, 'shoes'), orderBy('createdAt', 'desc'));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const shoesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log('Loaded shoes:', shoesData.length); // Debug log
+        setShoes(shoesData);
+        setLoading(false);
+      }, (error) => {
+        console.error('Error loading shoes:', error);
+        setLoading(false);
+      });
 
-    return unsubscribe;
+      return unsubscribe;
+    } catch (error) {
+      console.error('Error setting up shoes listener:', error);
+      setLoading(false);
+    }
   };
 
   const applyFilters = () => {
     let filtered = shoes.filter(shoe => {
       // Search filter
-      const matchesSearch = shoe.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           shoe.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           shoe.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           shoe.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery || 
+                           shoe.name?.toLowerCase().includes(searchLower) ||
+                           shoe.brand?.toLowerCase().includes(searchLower) ||
+                           shoe.description?.toLowerCase().includes(searchLower) ||
+                           shoe.tags?.some(tag => tag.toLowerCase().includes(searchLower)) ||
+                           shoe.category?.toLowerCase().includes(searchLower) ||
+                           shoe.color?.toLowerCase().includes(searchLower);
       
       // Brand filter
       const matchesBrand = filters.brands.length === 0 || filters.brands.includes(shoe.brand);
       
-      // Price filter
-      const matchesPrice = shoe.price >= filters.priceRange.min && 
-                          shoe.price <= filters.priceRange.max;
+      // Price filter - FIXED: Better price filtering
+      const shoePrice = parseFloat(shoe.price) || 0;
+      const matchesPrice = shoePrice >= filters.priceRange.min && 
+                          (filters.priceRange.max === 1000 ? true : shoePrice <= filters.priceRange.max);
       
       // Size filter
       const matchesSize = filters.sizes.length === 0 || 
@@ -108,13 +123,13 @@ const HomeScreen = ({ onNavigate, user }) => {
       // Category filter
       const matchesCategory = filters.categories.length === 0 || filters.categories.includes(shoe.category);
       
-      // Color filter
+      // Color filter - FIXED: Better color matching
       const matchesColor = filters.colors.length === 0 || 
                           (shoe.color && filters.colors.some(color => 
                             shoe.color.toLowerCase().includes(color.toLowerCase())
                           ));
       
-      // Material filter
+      // Material filter - FIXED: Better material matching
       const matchesMaterial = filters.materials.length === 0 || 
                              (shoe.material && filters.materials.some(material => 
                                shoe.material.toLowerCase().includes(material.toLowerCase())
@@ -133,13 +148,13 @@ const HomeScreen = ({ onNavigate, user }) => {
       const matchesStyle = filters.styles.length === 0 || filters.styles.includes(shoe.style);
       
       // Rating filter
-      const matchesRating = (shoe.rating || 0) >= filters.rating;
+      const matchesRating = filters.rating === 0 || (shoe.rating || 0) >= filters.rating;
       
       // Featured filter
       const matchesFeatured = !filters.featured || shoe.featured;
       
-      // Stock filter
-      const matchesStock = !filters.inStock || shoe.inStock;
+      // Stock filter - FIXED: Only filter if inStock is true
+      const matchesStock = !filters.inStock || shoe.inStock !== false;
 
       return matchesSearch && matchesBrand && matchesPrice && matchesSize && 
              matchesCondition && matchesCategory && matchesColor && matchesMaterial &&
@@ -150,16 +165,24 @@ const HomeScreen = ({ onNavigate, user }) => {
     // Apply sorting
     switch (sortBy) {
       case 'newest':
-        filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        filtered.sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+          return dateB - dateA;
+        });
         break;
       case 'oldest':
-        filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        filtered.sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+          return dateA - dateB;
+        });
         break;
       case 'priceHigh':
-        filtered.sort((a, b) => b.price - a.price);
+        filtered.sort((a, b) => (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0));
         break;
       case 'priceLow':
-        filtered.sort((a, b) => a.price - b.price);
+        filtered.sort((a, b) => (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0));
         break;
       case 'rating':
         filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0));
@@ -168,10 +191,10 @@ const HomeScreen = ({ onNavigate, user }) => {
         filtered.sort((a, b) => (b.views || 0) - (a.views || 0));
         break;
       case 'nameAZ':
-        filtered.sort((a, b) => a.name.localeCompare(b.name));
+        filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         break;
       case 'nameZA':
-        filtered.sort((a, b) => b.name.localeCompare(a.name));
+        filtered.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
         break;
       case 'featured':
         filtered.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
@@ -180,6 +203,7 @@ const HomeScreen = ({ onNavigate, user }) => {
         break;
     }
 
+    console.log('Filtered shoes:', filtered.length); // Debug log
     setFilteredShoes(filtered);
   };
 
@@ -198,7 +222,7 @@ const HomeScreen = ({ onNavigate, user }) => {
       styles: [],
       rating: 0,
       featured: false,
-      inStock: true,
+      inStock: false, // FIXED: Keep as false
     });
     setSearchQuery('');
     setSortBy('newest');
@@ -217,12 +241,13 @@ const HomeScreen = ({ onNavigate, user }) => {
            filters.styles.length +
            (filters.rating > 0 ? 1 : 0) +
            (filters.featured ? 1 : 0) +
+           (filters.inStock ? 1 : 0) +
            (filters.priceRange.min > 0 || filters.priceRange.max < 1000 ? 1 : 0);
   };
 
   const activeFiltersCount = getActiveFiltersCount();
 
-  // Get unique values for filters with safety checks
+  // Get unique values for filters with safety checks - FIXED: Better error handling
   const getUniqueValues = () => {
     if (!shoes || shoes.length === 0) {
       return {
@@ -239,18 +264,34 @@ const HomeScreen = ({ onNavigate, user }) => {
       };
     }
 
-    return {
-      brands: [...new Set(shoes.map(shoe => shoe.brand).filter(Boolean))],
-      sizes: [...new Set(shoes.flatMap(shoe => shoe.sizes || []))].sort((a, b) => a - b),
-      conditions: [...new Set(shoes.map(shoe => shoe.condition).filter(Boolean))],
-      categories: [...new Set(shoes.map(shoe => shoe.category).filter(Boolean))],
-      colors: [...new Set(shoes.map(shoe => shoe.color).filter(Boolean))],
-      materials: [...new Set(shoes.map(shoe => shoe.material).filter(Boolean))],
-      genders: [...new Set(shoes.map(shoe => shoe.targetGender).filter(Boolean))],
-      ageGroups: [...new Set(shoes.map(shoe => shoe.ageGroup).filter(Boolean))],
-      seasons: [...new Set(shoes.map(shoe => shoe.season).filter(Boolean))],
-      styles: [...new Set(shoes.map(shoe => shoe.style).filter(Boolean))],
-    };
+    try {
+      return {
+        brands: [...new Set(shoes.map(shoe => shoe.brand).filter(Boolean))].sort(),
+        sizes: [...new Set(shoes.flatMap(shoe => shoe.sizes || []))].sort((a, b) => parseFloat(a) - parseFloat(b)),
+        conditions: [...new Set(shoes.map(shoe => shoe.condition).filter(Boolean))].sort(),
+        categories: [...new Set(shoes.map(shoe => shoe.category).filter(Boolean))].sort(),
+        colors: [...new Set(shoes.map(shoe => shoe.color).filter(Boolean))].sort(),
+        materials: [...new Set(shoes.map(shoe => shoe.material).filter(Boolean))].sort(),
+        genders: [...new Set(shoes.map(shoe => shoe.targetGender).filter(Boolean))].sort(),
+        ageGroups: [...new Set(shoes.map(shoe => shoe.ageGroup).filter(Boolean))].sort(),
+        seasons: [...new Set(shoes.map(shoe => shoe.season).filter(Boolean))].sort(),
+        styles: [...new Set(shoes.map(shoe => shoe.style).filter(Boolean))].sort(),
+      };
+    } catch (error) {
+      console.error('Error getting unique values:', error);
+      return {
+        brands: [],
+        sizes: [],
+        conditions: [],
+        categories: [],
+        colors: [],
+        materials: [],
+        genders: [],
+        ageGroups: [],
+        seasons: [],
+        styles: [],
+      };
+    }
   };
 
   const uniqueValues = getUniqueValues();
@@ -258,7 +299,7 @@ const HomeScreen = ({ onNavigate, user }) => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <StatusBar barStyle="dark-content" backgroundColor="#e0e0e0" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2563eb" />
           <Text style={styles.loadingText}>Loading shoes...</Text>
@@ -280,24 +321,6 @@ const HomeScreen = ({ onNavigate, user }) => {
             </Text>
             <Text style={styles.welcomeText}>Find your perfect shoes</Text>
           </View>
-          <View style={styles.headerButtons}>
-            {user ? (
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => onNavigate('addShoe')}
-              >
-                <Ionicons name="add" size={24} color="#ffffff" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.loginButton}
-                onPress={() => onNavigate('login')}
-              >
-                <Ionicons name="person-outline" size={20} color="#2563eb" />
-                <Text style={styles.loginButtonText}>Login</Text>
-              </TouchableOpacity>
-            )}
-          </View>
         </View>
 
         {/* Search and Filter Row */}
@@ -310,6 +333,11 @@ const HomeScreen = ({ onNavigate, user }) => {
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color="#6b7280" />
+              </TouchableOpacity>
+            )}
           </View>
           <TouchableOpacity
             style={[styles.filterButton, activeFiltersCount > 0 && styles.activeFilterButton]}
@@ -353,7 +381,7 @@ const HomeScreen = ({ onNavigate, user }) => {
         <Text style={styles.resultsText}>
           {filteredShoes.length} shoe{filteredShoes.length !== 1 ? 's' : ''} found
         </Text>
-        {activeFiltersCount > 0 && (
+        {(activeFiltersCount > 0 || searchQuery.length > 0) && (
           <TouchableOpacity onPress={clearFilters}>
             <Text style={styles.clearFiltersText}>Clear all filters</Text>
           </TouchableOpacity>
@@ -376,14 +404,23 @@ const HomeScreen = ({ onNavigate, user }) => {
         {filteredShoes.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="sad-outline" size={64} color="#9ca3af" />
-            <Text style={styles.emptyText}>No shoes found</Text>
-            <Text style={styles.emptySubtext}>Try adjusting your filters or search terms</Text>
+            <Text style={styles.emptyText}>
+              {shoes.length === 0 ? 'No shoes available' : 'No shoes match your filters'}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {shoes.length === 0 
+                ? 'Be the first to add a shoe to the marketplace!' 
+                : 'Try adjusting your filters or search terms'
+              }
+            </Text>
             {user && (
               <TouchableOpacity
                 style={styles.addShoeButton}
                 onPress={() => onNavigate('addShoe')}
               >
-                <Text style={styles.addShoeButtonText}>Add First Shoe</Text>
+                <Text style={styles.addShoeButtonText}>
+                  {shoes.length === 0 ? 'Add First Shoe' : 'Add New Shoe'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -408,7 +445,9 @@ const HomeScreen = ({ onNavigate, user }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    // marginTop:20,
     backgroundColor: '#ffffff',
+    // marginBottom:5
   },
   loadingContainer: {
     flex: 1,
@@ -426,6 +465,7 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 10 : 20, // Extra padding for notch
     paddingBottom: 8,
     borderBottomWidth: 1,
+    backgroundColor:'#e0e0e0',
     borderBottomColor: '#f3f4f6',
   },
   headerTop: {

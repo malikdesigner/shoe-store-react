@@ -1,5 +1,5 @@
 // screens/AddShoeScreen.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,12 @@ import {
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 const AddShoeScreen = ({ onNavigate, user }) => {
+  const [userRole, setUserRole] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     brand: '',
@@ -36,10 +38,10 @@ const AddShoeScreen = ({ onNavigate, user }) => {
     targetGender: 'unisex',
     ageGroup: 'adult',
     season: 'all-season',
-    style: 'casual',
+    shoeStyle: 'casual',
     featured: false,
   });
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [selectedSizes, setSelectedSizes] = useState([]);
 
   // Enhanced options
@@ -49,22 +51,86 @@ const AddShoeScreen = ({ onNavigate, user }) => {
   const genders = ['men', 'women', 'unisex', 'kids'];
   const ageGroups = ['adult', 'youth', 'child', 'toddler', 'infant'];
   const seasons = ['all-season', 'summer', 'winter', 'spring', 'fall'];
-  const styles = ['casual', 'formal', 'athletic', 'vintage', 'modern', 'luxury'];
+  const shoeStyles = ['casual', 'formal', 'athletic', 'vintage', 'modern', 'luxury'];
 
-  // Check if user is logged in
+  useEffect(() => {
+    loadUserRole();
+  }, [user]);
+
+  const loadUserRole = async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userData = userDoc.data();
+      setUserRole(userData?.role || 'customer');
+    } catch (error) {
+      console.error('Error loading user role:', error);
+      setUserRole('customer'); // Default to customer
+    }
+    setLoading(false);
+  };
+
+  // Check if user can add shoes (only customers and admins, not guests)
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.authRequired}>
-          <Ionicons name="lock-closed-outline" size={64} color="#9ca3af" />
-          <Text style={styles.authTitle}>Login Required</Text>
-          <Text style={styles.authSubtitle}>Please login to add shoes to the store</Text>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={styles.restrictedContainer}>
+          <Ionicons name="person-add-outline" size={64} color="#f59e0b" />
+          <Text style={styles.restrictedTitle}>Customer Access Required</Text>
+          <Text style={styles.restrictedSubtitle}>
+            Only registered customers can add shoes to the marketplace. Join our community to start selling!
+          </Text>
+          <TouchableOpacity
+            style={styles.signupButton}
+            onPress={() => onNavigate('signup')}
+          >
+            <Ionicons name="person-add" size={20} color="#ffffff" />
+            <Text style={styles.signupButtonText}>Sign Up as Customer</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.loginButton}
             onPress={() => onNavigate('login')}
           >
-            <Text style={styles.loginButtonText}>Login</Text>
+            <Text style={styles.loginButtonText}>Already have an account? Login</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => onNavigate('home')}
+          >
+            <Text style={styles.backButtonText}>Back to Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Checking permissions...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Only customers and admins can add shoes
+  if (userRole !== 'customer' && userRole !== 'admin') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={styles.restrictedContainer}>
+          <Ionicons name="business-outline" size={64} color="#ef4444" />
+          <Text style={styles.restrictedTitle}>Access Restricted</Text>
+          <Text style={styles.restrictedSubtitle}>
+            Only customers can add shoes to sell in the marketplace. Your current role doesn't allow this action.
+          </Text>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => onNavigate('home')}
@@ -94,21 +160,21 @@ const AddShoeScreen = ({ onNavigate, user }) => {
     const { name, brand, price, imageUrl } = formData;
     
     if (!name || !brand || !price || !imageUrl) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      Alert.alert('Missing Information', 'Please fill in all required fields: Name, Brand, Price, and Image URL');
       return;
     }
 
     if (isNaN(price) || parseFloat(price) <= 0) {
-      Alert.alert('Error', 'Please enter a valid price');
+      Alert.alert('Invalid Price', 'Please enter a valid price greater than 0');
       return;
     }
 
     if (selectedSizes.length === 0) {
-      Alert.alert('Error', 'Please select at least one size');
+      Alert.alert('Missing Sizes', 'Please select at least one available size');
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
     try {
       // Parse additional images
       const additionalImagesArray = formData.additionalImages
@@ -150,11 +216,11 @@ const AddShoeScreen = ({ onNavigate, user }) => {
         targetGender: formData.targetGender,
         ageGroup: formData.ageGroup,
         season: formData.season,
-        style: formData.style,
+        style: formData.shoeStyle,
         
         // Availability
         sizes: selectedSizes,
-        featured: formData.featured,
+        featured: userRole === 'admin' ? formData.featured : false, // Only admins can set featured
         tags: tagsArray,
         
         // Metrics
@@ -166,6 +232,7 @@ const AddShoeScreen = ({ onNavigate, user }) => {
         // Seller Info
         sellerId: user.uid,
         sellerEmail: user.email,
+        sellerRole: userRole,
         
         // Timestamps
         createdAt: new Date(),
@@ -176,12 +243,44 @@ const AddShoeScreen = ({ onNavigate, user }) => {
         inStock: true,
       });
 
-      Alert.alert('Success', 'Shoe added successfully!');
-      onNavigate('home');
+      Alert.alert(
+        'Success! 🎉', 
+        'Your shoe has been added to the marketplace successfully!',
+        [
+          { text: 'Add Another', onPress: () => {
+            // Reset form
+            setFormData({
+              name: '',
+              brand: '',
+              price: '',
+              originalPrice: '',
+              imageUrl: '',
+              additionalImages: '',
+              description: '',
+              condition: 'new',
+              category: 'sneakers',
+              color: '',
+              material: '',
+              weight: '',
+              manufacturer: '',
+              countryOfOrigin: '',
+              sku: '',
+              tags: '',
+              targetGender: 'unisex',
+              ageGroup: 'adult',
+              season: 'all-season',
+              shoeStyle: 'casual',
+              featured: false,
+            });
+            setSelectedSizes([]);
+          }},
+          { text: 'View Marketplace', onPress: () => onNavigate('home') }
+        ]
+      );
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', `Failed to add shoe: ${error.message}`);
     }
-    setLoading(false);
+    setSubmitting(false);
   };
 
   return (
@@ -193,12 +292,28 @@ const AddShoeScreen = ({ onNavigate, user }) => {
         <TouchableOpacity onPress={() => onNavigate('home')}>
           <Ionicons name="arrow-back" size={24} color="#1f2937" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add New Shoe</Text>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Add New Shoe</Text>
+          {userRole === 'admin' && (
+            <Text style={styles.adminBadge}>Admin Mode</Text>
+          )}
+        </View>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.form}>
+          {/* User Info Banner */}
+          <View style={styles.sellerBanner}>
+            <View style={styles.sellerInfo}>
+              <Ionicons name="person-circle" size={24} color="#2563eb" />
+              <View style={styles.sellerDetails}>
+                <Text style={styles.sellerName}>Selling as: {user.email}</Text>
+                <Text style={styles.sellerRole}>{userRole === 'admin' ? 'Administrator' : 'Customer'}</Text>
+              </View>
+            </View>
+          </View>
+
           {/* Basic Information */}
           <Text style={styles.sectionTitle}>Basic Information</Text>
           
@@ -206,7 +321,7 @@ const AddShoeScreen = ({ onNavigate, user }) => {
             <Text style={styles.label}>Shoe Name *</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Air Max 270"
+              placeholder="e.g. Air Max 270, Stan Smith Classic"
               value={formData.name}
               onChangeText={(value) => updateFormData('name', value)}
             />
@@ -216,7 +331,7 @@ const AddShoeScreen = ({ onNavigate, user }) => {
             <Text style={styles.label}>Brand *</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Nike"
+              placeholder="e.g. Nike, Adidas, Converse"
               value={formData.brand}
               onChangeText={(value) => updateFormData('brand', value)}
             />
@@ -251,7 +366,7 @@ const AddShoeScreen = ({ onNavigate, user }) => {
               <Text style={styles.label}>Color</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Black"
+                placeholder="Black, White, Red"
                 value={formData.color}
                 onChangeText={(value) => updateFormData('color', value)}
               />
@@ -261,15 +376,39 @@ const AddShoeScreen = ({ onNavigate, user }) => {
               <Text style={styles.label}>Material</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Leather"
+                placeholder="Leather, Canvas, Synthetic"
                 value={formData.material}
                 onChangeText={(value) => updateFormData('material', value)}
               />
             </View>
           </View>
 
+          {/* Size Selection */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Available Sizes * ({selectedSizes.length} selected)</Text>
+            <View style={styles.sizeGrid}>
+              {availableSizes.map((size) => (
+                <TouchableOpacity
+                  key={size}
+                  style={[
+                    styles.sizeChip,
+                    selectedSizes.includes(size) && styles.selectedSizeChip
+                  ]}
+                  onPress={() => toggleSize(size)}
+                >
+                  <Text style={[
+                    styles.sizeChipText,
+                    selectedSizes.includes(size) && styles.selectedSizeChipText
+                  ]}>
+                    {size}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Classification */}
-          <Text style={styles.sectionTitle}>Classification</Text>
+          <Text style={styles.sectionTitle}>Product Classification</Text>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Category *</Text>
@@ -297,107 +436,6 @@ const AddShoeScreen = ({ onNavigate, user }) => {
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Target Gender *</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipContainer}>
-                {genders.map((gender) => (
-                  <TouchableOpacity
-                    key={gender}
-                    style={[
-                      styles.chip,
-                      formData.targetGender === gender && styles.selectedChip
-                    ]}
-                    onPress={() => updateFormData('targetGender', gender)}
-                  >
-                    <Text style={[
-                      styles.chipText,
-                      formData.targetGender === gender && styles.selectedChipText
-                    ]}>
-                      {gender}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Age Group *</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipContainer}>
-                {ageGroups.map((age) => (
-                  <TouchableOpacity
-                    key={age}
-                    style={[
-                      styles.chip,
-                      formData.ageGroup === age && styles.selectedChip
-                    ]}
-                    onPress={() => updateFormData('ageGroup', age)}
-                  >
-                    <Text style={[
-                      styles.chipText,
-                      formData.ageGroup === age && styles.selectedChipText
-                    ]}>
-                      {age}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Style *</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipContainer}>
-                {styles.map((style) => (
-                  <TouchableOpacity
-                    key={style}
-                    style={[
-                      styles.chip,
-                      formData.style === style && styles.selectedChip
-                    ]}
-                    onPress={() => updateFormData('style', style)}
-                  >
-                    <Text style={[
-                      styles.chipText,
-                      formData.style === style && styles.selectedChipText
-                    ]}>
-                      {style}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Season *</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipContainer}>
-                {seasons.map((season) => (
-                  <TouchableOpacity
-                    key={season}
-                    style={[
-                      styles.chip,
-                      formData.season === season && styles.selectedChip
-                    ]}
-                    onPress={() => updateFormData('season', season)}
-                  >
-                    <Text style={[
-                      styles.chipText,
-                      formData.season === season && styles.selectedChipText
-                    ]}>
-                      {season}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-
-          {/* Condition Selection */}
-          <View style={styles.inputContainer}>
             <Text style={styles.label}>Condition *</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={styles.chipContainer}>
@@ -422,106 +460,27 @@ const AddShoeScreen = ({ onNavigate, user }) => {
             </ScrollView>
           </View>
 
-          {/* Size Selection */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Available Sizes * ({selectedSizes.length} selected)</Text>
-            <View style={styles.sizeGrid}>
-              {availableSizes.map((size) => (
-                <TouchableOpacity
-                  key={size}
-                  style={[
-                    styles.sizeChip,
-                    selectedSizes.includes(size) && styles.selectedSizeChip
-                  ]}
-                  onPress={() => toggleSize(size)}
-                >
-                  <Text style={[
-                    styles.sizeChipText,
-                    selectedSizes.includes(size) && styles.selectedSizeChipText
-                  ]}>
-                    {size}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          {/* Admin-only Featured Toggle */}
+          {userRole === 'admin' && (
+            <View style={styles.inputContainer}>
+              <TouchableOpacity
+                style={[styles.toggleContainer, formData.featured && styles.toggleActive]}
+                onPress={() => updateFormData('featured', !formData.featured)}
+              >
+                <Ionicons 
+                  name={formData.featured ? "star" : "star-outline"} 
+                  size={24} 
+                  color={formData.featured ? "#f59e0b" : "#6b7280"} 
+                />
+                <Text style={[styles.toggleText, formData.featured && styles.toggleActiveText]}>
+                  Featured Product (Admin Only)
+                </Text>
+              </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Additional Details */}
-          <Text style={styles.sectionTitle}>Additional Details</Text>
-
-          <View style={styles.row}>
-            <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>Weight</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="300g"
-                value={formData.weight}
-                onChangeText={(value) => updateFormData('weight', value)}
-              />
-            </View>
-
-            <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
-              <Text style={styles.label}>SKU</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="SKU-001"
-                value={formData.sku}
-                onChangeText={(value) => updateFormData('sku', value)}
-              />
-            </View>
-          </View>
-
-          <View style={styles.row}>
-            <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>Manufacturer</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Nike Inc."
-                value={formData.manufacturer}
-                onChangeText={(value) => updateFormData('manufacturer', value)}
-              />
-            </View>
-
-            <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
-              <Text style={styles.label}>Country of Origin</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Vietnam"
-                value={formData.countryOfOrigin}
-                onChangeText={(value) => updateFormData('countryOfOrigin', value)}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Tags (comma separated)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="running, lightweight, breathable"
-              value={formData.tags}
-              onChangeText={(value) => updateFormData('tags', value)}
-            />
-          </View>
-
-          {/* Featured Toggle */}
-          <View style={styles.inputContainer}>
-            <TouchableOpacity
-              style={[styles.toggleContainer, formData.featured && styles.toggleActive]}
-              onPress={() => updateFormData('featured', !formData.featured)}
-            >
-              <Ionicons 
-                name={formData.featured ? "checkmark-circle" : "checkmark-circle-outline"} 
-                size={24} 
-                color={formData.featured ? "#2563eb" : "#6b7280"} 
-              />
-              <Text style={[styles.toggleText, formData.featured && styles.toggleActiveText]}>
-                Featured Product
-              </Text>
-            </TouchableOpacity>
-          </View>
+          )}
 
           {/* Media & Description */}
-          <Text style={styles.sectionTitle}>Media & Description</Text>
+          <Text style={styles.sectionTitle}>Images & Description</Text>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Main Image URL *</Text>
@@ -532,26 +491,16 @@ const AddShoeScreen = ({ onNavigate, user }) => {
               onChangeText={(value) => updateFormData('imageUrl', value)}
               autoCapitalize="none"
             />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Additional Images (comma separated URLs)</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="https://example.com/image1.jpg, https://example.com/image2.jpg"
-              value={formData.additionalImages}
-              onChangeText={(value) => updateFormData('additionalImages', value)}
-              multiline
-              numberOfLines={3}
-              autoCapitalize="none"
-            />
+            <Text style={styles.helperText}>
+              Tip: Use high-quality images for better sales. Make sure the URL ends with .jpg, .png, or .webp
+            </Text>
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Description</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="Describe the shoe features, condition, special details, etc."
+              placeholder="Describe the shoe's features, condition, fit, style, and any special details that buyers should know..."
               value={formData.description}
               onChangeText={(value) => updateFormData('description', value)}
               multiline
@@ -560,14 +509,27 @@ const AddShoeScreen = ({ onNavigate, user }) => {
           </View>
 
           <TouchableOpacity
-            style={[styles.addButton, loading && styles.disabledButton]}
+            style={[styles.addButton, submitting && styles.disabledButton]}
             onPress={handleAddShoe}
-            disabled={loading}
+            disabled={submitting}
           >
-            <Text style={styles.addButtonText}>
-              {loading ? 'Adding Shoe...' : 'Add Shoe'}
-            </Text>
+            {submitting ? (
+              <Text style={styles.addButtonText}>Adding Shoe...</Text>
+            ) : (
+              <>
+                <Ionicons name="add-circle" size={20} color="#ffffff" />
+                <Text style={styles.addButtonText}>Add Shoe to Marketplace</Text>
+              </>
+            )}
           </TouchableOpacity>
+
+          <View style={styles.disclaimer}>
+            <Ionicons name="information-circle-outline" size={16} color="#6b7280" />
+            <Text style={styles.disclaimerText}>
+              By adding this shoe, you agree to our seller terms and conditions. 
+              Ensure all information is accurate and images are of the actual product.
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -579,36 +541,61 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff',
   },
-  authRequired: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
   },
-  authTitle: {
+  loadingText: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  restrictedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  restrictedTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#1f2937',
     marginTop: 16,
     marginBottom: 8,
+    textAlign: 'center',
   },
-  authSubtitle: {
+  restrictedSubtitle: {
     fontSize: 16,
     color: '#6b7280',
     textAlign: 'center',
     marginBottom: 32,
+    lineHeight: 24,
   },
-  loginButton: {
+  signupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#2563eb',
     paddingHorizontal: 32,
     paddingVertical: 12,
     borderRadius: 12,
     marginBottom: 12,
   },
-  loginButtonText: {
+  signupButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
+  },
+  loginButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  loginButtonText: {
+    color: '#2563eb',
+    fontSize: 16,
+    fontWeight: '500',
   },
   backButton: {
     paddingHorizontal: 32,
@@ -627,16 +614,48 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+  headerContent: {
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1f2937',
+  },
+  adminBadge: {
+    fontSize: 12,
+    color: '#7c3aed',
+    fontWeight: '600',
+    marginTop: 2,
   },
   content: {
     flex: 1,
   },
   form: {
     padding: 24,
+  },
+  sellerBanner: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  sellerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sellerDetails: {
+    marginLeft: 12,
+  },
+  sellerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  sellerRole: {
+    fontSize: 14,
+    color: '#2563eb',
+    marginTop: 2,
   },
   sectionTitle: {
     fontSize: 18,
@@ -670,6 +689,12 @@ const styles = StyleSheet.create({
   textArea: {
     height: 100,
     textAlignVertical: 'top',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   chipContainer: {
     flexDirection: 'row',
@@ -730,8 +755,8 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   toggleActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#2563eb',
+    backgroundColor: '#fef3c7',
+    borderColor: '#f59e0b',
   },
   toggleText: {
     fontSize: 16,
@@ -740,22 +765,51 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   toggleActiveText: {
-    color: '#2563eb',
+    color: '#f59e0b',
   },
   addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#2563eb',
     paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
     marginTop: 20,
+    marginBottom: 16,
+    shadowColor: '#2563eb',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   disabledButton: {
     backgroundColor: '#9ca3af',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   addButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
+  },
+  disclaimer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f9fafb',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  disclaimerText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 8,
+    lineHeight: 16,
+    flex: 1,
   },
 });
 

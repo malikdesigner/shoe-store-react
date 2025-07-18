@@ -1,4 +1,3 @@
-// screens/CartScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -12,11 +11,15 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase/config'; // Fixed import path
+import { db } from '../firebase/config';
 import CartItem from '../components/CartItem';
 import BottomNavigation from '../components/BottomNavigation';
+
+const GUEST_CART_KEY = 'guestCart';
+const GUEST_CART_EXPIRY = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 
 const CartScreen = ({ onNavigate, user }) => {
   const [cartItems, setCartItems] = useState([]);
@@ -27,12 +30,90 @@ const CartScreen = ({ onNavigate, user }) => {
     loadCart();
   }, [user]);
 
+  // Guest cart management functions
+  const saveGuestCart = async (cartData) => {
+    try {
+      const cartWithTimestamp = {
+        items: cartData,
+        timestamp: Date.now()
+      };
+      await AsyncStorage.setItem(GUEST_CART_KEY, JSON.stringify(cartWithTimestamp));
+    } catch (error) {
+      console.error('Error saving guest cart:', error);
+    }
+  };
+
+  const loadGuestCart = async () => {
+    try {
+      const storedCart = await AsyncStorage.getItem(GUEST_CART_KEY);
+      if (storedCart) {
+        const parsedCart = JSON.parse(storedCart);
+        const now = Date.now();
+        
+        // Check if cart has expired (2 hours)
+        if (now - parsedCart.timestamp > GUEST_CART_EXPIRY) {
+          await AsyncStorage.removeItem(GUEST_CART_KEY);
+          return [];
+        }
+        
+        return parsedCart.items || [];
+      }
+      return [];
+    } catch (error) {
+      console.error('Error loading guest cart:', error);
+      return [];
+    }
+  };
+
+  const clearGuestCart = async () => {
+    try {
+      await AsyncStorage.removeItem(GUEST_CART_KEY);
+    } catch (error) {
+      console.error('Error clearing guest cart:', error);
+    }
+  };
+
+  const addToGuestCart = async (shoeId, size, quantity = 1, shoeData) => {
+    try {
+      const currentCart = await loadGuestCart();
+      const existingItemIndex = currentCart.findIndex(
+        item => item.shoeId === shoeId && item.size === size
+      );
+
+      let updatedCart;
+      if (existingItemIndex >= 0) {
+        // Update existing item
+        updatedCart = [...currentCart];
+        updatedCart[existingItemIndex].quantity += quantity;
+      } else {
+        // Add new item
+        const newItem = {
+          shoeId,
+          size,
+          quantity,
+          shoe: shoeData
+        };
+        updatedCart = [...currentCart, newItem];
+      }
+
+      await saveGuestCart(updatedCart);
+      return updatedCart;
+    } catch (error) {
+      console.error('Error adding to guest cart:', error);
+      return [];
+    }
+  };
+
   const loadCart = async () => {
-    // Handle both authenticated and guest users
     if (!user) {
-      // For guest users, we could implement localStorage-like functionality
-      // For now, just show empty cart
-      setCartItems([]);
+      // Load guest cart from AsyncStorage
+      try {
+        const guestCartItems = await loadGuestCart();
+        setCartItems(guestCartItems);
+      } catch (error) {
+        console.error('Error loading guest cart:', error);
+        setCartItems([]);
+      }
       setLoading(false);
       return;
     }
@@ -57,7 +138,7 @@ const CartScreen = ({ onNavigate, user }) => {
         const cartWithShoeData = cart.map(cartItem => ({
           ...cartItem,
           shoe: shoesData[cartItem.shoeId]
-        })).filter(item => item.shoe); // Filter out items where shoe doesn't exist
+        })).filter(item => item.shoe);
 
         setCartItems(cartWithShoeData);
       } else {
@@ -72,14 +153,21 @@ const CartScreen = ({ onNavigate, user }) => {
 
   const updateCartInFirestore = async (newCart) => {
     if (!user) {
-      Alert.alert('Login Required', 'Please login to update your cart');
+      // Save to AsyncStorage for guest users
+      const cartForStorage = newCart.map(item => ({
+        shoeId: item.shoeId,
+        size: item.size,
+        quantity: item.quantity,
+        shoe: item.shoe
+      }));
+      await saveGuestCart(cartForStorage);
       return;
     }
 
     setUpdating(true);
     try {
       await updateDoc(doc(db, 'users', user.uid), {
-        cart: newCart
+        cart: newCart.map(({ shoe, ...item }) => item)
       });
     } catch (error) {
       Alert.alert('Error', 'Failed to update cart');
@@ -101,9 +189,7 @@ const CartScreen = ({ onNavigate, user }) => {
     });
 
     setCartItems(updatedCart);
-    
-    const cartForFirestore = updatedCart.map(({ shoe, ...item }) => item);
-    await updateCartInFirestore(cartForFirestore);
+    await updateCartInFirestore(updatedCart);
   };
 
   const removeFromCart = async (shoeId, size) => {
@@ -112,9 +198,7 @@ const CartScreen = ({ onNavigate, user }) => {
     );
 
     setCartItems(updatedCart);
-    
-    const cartForFirestore = updatedCart.map(({ shoe, ...item }) => item);
-    await updateCartInFirestore(cartForFirestore);
+    await updateCartInFirestore(updatedCart);
   };
 
   const clearCart = async () => {
@@ -128,7 +212,11 @@ const CartScreen = ({ onNavigate, user }) => {
           style: 'destructive',
           onPress: async () => {
             setCartItems([]);
-            await updateCartInFirestore([]);
+            if (user) {
+              await updateCartInFirestore([]);
+            } else {
+              await clearGuestCart();
+            }
           },
         },
       ]
@@ -141,42 +229,42 @@ const CartScreen = ({ onNavigate, user }) => {
     }, 0);
   };
 
-  const checkout = () => {
+  const proceedToCheckout = () => {
+    if (cartItems.length === 0) {
+      Alert.alert('Empty Cart', 'Your cart is empty');
+      return;
+    }
+
+    // Allow both users and guests to proceed to checkout
     if (!user) {
       Alert.alert(
-        'Login Required',
-        'Please login to proceed with checkout',
+        'Guest Checkout',
+        'You can checkout as a guest or login to save your information',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Login', onPress: () => onNavigate('login') }
+          { text: 'Checkout as Guest', onPress: () => onNavigate('checkout') },
+          { text: 'Login First', onPress: () => onNavigate('login') }
         ]
       );
       return;
     }
 
-    if (cartItems.length === 0) {
-      Alert.alert('Error', 'Your cart is empty');
-      return;
-    }
-
-    Alert.alert(
-      'Checkout',
-      `Total: $${getTotalPrice().toFixed(2)}\n\nProceed to payment?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Proceed',
-          onPress: () => {
-            Alert.alert('Success', 'Order placed successfully! (Demo)');
-            setCartItems([]);
-            updateCartInFirestore([]);
-          },
-        },
-      ]
-    );
+    // Navigate to checkout screen
+    onNavigate('checkout');
   };
 
-  // Show guest cart message for non-authenticated users
+  // Expose addToGuestCart function globally for use in other screens
+  React.useEffect(() => {
+    global.addToGuestCart = addToGuestCart;
+    global.loadGuestCart = loadGuestCart;
+    
+    return () => {
+      delete global.addToGuestCart;
+      delete global.loadGuestCart;
+    };
+  }, []);
+
+  // Show guest cart interface for non-authenticated users
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
@@ -184,28 +272,124 @@ const CartScreen = ({ onNavigate, user }) => {
         
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Shopping Cart</Text>
-          <Text style={styles.headerSubtitle}>Guest Mode</Text>
+          <View style={styles.headerActions}>
+            <Text style={styles.headerSubtitle}>
+              Guest Mode • {cartItems.length} item{cartItems.length !== 1 ? 's' : ''}
+            </Text>
+            {cartItems.length > 0 && (
+              <TouchableOpacity onPress={clearCart}>
+                <Text style={styles.clearText}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        <View style={styles.guestCartContainer}>
-          <Ionicons name="information-circle-outline" size={64} color="#3b82f6" />
-          <Text style={styles.guestTitle}>Guest Cart</Text>
-          <Text style={styles.guestSubtitle}>
-            Your cart items will be saved temporarily. Login to save items permanently and checkout.
-          </Text>
-          <TouchableOpacity
-            style={styles.loginButton}
-            onPress={() => onNavigate('login')}
-          >
-            <Text style={styles.loginButtonText}>Login to Continue</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.browseButton}
-            onPress={() => onNavigate('home')}
-          >
-            <Text style={styles.browseButtonText}>Continue Shopping</Text>
-          </TouchableOpacity>
-        </View>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#2563eb" />
+            <Text style={styles.loadingText}>Loading cart...</Text>
+          </View>
+        ) : (
+          <>
+            {/* Cart Content */}
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+              {cartItems.length > 0 ? (
+                <>
+                  {/* Guest Info Banner */}
+                  <View style={styles.guestBanner}>
+                    <Ionicons name="time-outline" size={20} color="#f59e0b" />
+                    <Text style={styles.guestBannerText}>
+                      Your cart will be saved for 2 hours. Login to save permanently.
+                    </Text>
+                  </View>
+
+                  {cartItems.map((item, index) => (
+                    <CartItem
+                      key={`${item.shoeId}-${item.size}`}
+                      item={item}
+                      onUpdateQuantity={updateQuantity}
+                      onRemove={removeFromCart}
+                      updating={updating}
+                    />
+                  ))}
+                  
+                  {/* Shopping Benefits */}
+                  <View style={styles.benefitsContainer}>
+                    <View style={styles.benefitItem}>
+                      <Ionicons name="shield-checkmark-outline" size={20} color="#10b981" />
+                      <Text style={styles.benefitText}>Secure Checkout</Text>
+                    </View>
+                    <View style={styles.benefitItem}>
+                      <Ionicons name="refresh-outline" size={20} color="#3b82f6" />
+                      <Text style={styles.benefitText}>Easy Returns</Text>
+                    </View>
+                    <View style={styles.benefitItem}>
+                      <Ionicons name="car-outline" size={20} color="#f59e0b" />
+                      <Text style={styles.benefitText}>Fast Delivery</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Ionicons name="bag-outline" size={64} color="#3b82f6" />
+                  <Text style={styles.guestTitle}>Guest Shopping Cart</Text>
+                  <Text style={styles.guestSubtitle}>
+                    As a guest, you can add items to your cart and checkout. Your items will be saved for 2 hours.
+                  </Text>
+                  
+                  <View style={styles.guestCartActions}>
+                    <TouchableOpacity
+                      style={styles.loginButton}
+                      onPress={() => onNavigate('login')}
+                    >
+                      <Text style={styles.loginButtonText}>Login to Save Cart</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <TouchableOpacity
+                    style={styles.browseButton}
+                    onPress={() => onNavigate('home')}
+                  >
+                    <Text style={styles.browseButtonText}>Continue Shopping</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Checkout Section */}
+            {cartItems.length > 0 && (
+              <View style={styles.checkoutSection}>
+                <View style={styles.summaryRow}>
+                  <View>
+                    <Text style={styles.totalLabel}>Total ({cartItems.length} items)</Text>
+                    <Text style={styles.totalPrice}>${getTotalPrice().toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.shippingInfo}>
+                    <Text style={styles.shippingText}>
+                      {getTotalPrice() > 100 ? '🚚 FREE Shipping' : '+ $9.99 Shipping'}
+                    </Text>
+                    {getTotalPrice() <= 100 && (
+                      <Text style={styles.freeShippingTip}>
+                        Add ${(100 - getTotalPrice()).toFixed(2)} more for FREE shipping
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                
+                <TouchableOpacity
+                  style={[styles.checkoutButton, updating && styles.disabledButton]}
+                  onPress={proceedToCheckout}
+                  disabled={updating}
+                >
+                  <Ionicons name="card-outline" size={20} color="#ffffff" />
+                  <Text style={styles.checkoutButtonText}>
+                    {updating ? 'Updating...' : 'Checkout as Guest'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
+        )}
 
         <BottomNavigation onNavigate={onNavigate} currentScreen="cart" user={user} />
       </SafeAreaView>
@@ -257,18 +441,35 @@ const CartScreen = ({ onNavigate, user }) => {
                 updating={updating}
               />
             ))}
+            
+            {/* Shopping Benefits */}
+            <View style={styles.benefitsContainer}>
+              <View style={styles.benefitItem}>
+                <Ionicons name="shield-checkmark-outline" size={20} color="#10b981" />
+                <Text style={styles.benefitText}>Secure Checkout</Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <Ionicons name="refresh-outline" size={20} color="#3b82f6" />
+                <Text style={styles.benefitText}>Easy Returns</Text>
+              </View>
+              <View style={styles.benefitItem}>
+                <Ionicons name="car-outline" size={20} color="#f59e0b" />
+                <Text style={styles.benefitText}>Fast Delivery</Text>
+              </View>
+            </View>
           </>
         ) : (
           <View style={styles.emptyState}>
             <Ionicons name="bag-outline" size={64} color="#9ca3af" />
             <Text style={styles.emptyText}>Your cart is empty</Text>
             <Text style={styles.emptySubtext}>
-              Add some shoes to get started
+              Discover amazing shoes and add them to your cart
             </Text>
             <TouchableOpacity
               style={styles.shopButton}
               onPress={() => onNavigate('home')}
             >
+              <Ionicons name="storefront-outline" size={20} color="#ffffff" />
               <Text style={styles.shopButtonText}>Start Shopping</Text>
             </TouchableOpacity>
           </View>
@@ -278,15 +479,29 @@ const CartScreen = ({ onNavigate, user }) => {
       {/* Checkout Section */}
       {cartItems.length > 0 && (
         <View style={styles.checkoutSection}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalPrice}>${getTotalPrice().toFixed(2)}</Text>
+          <View style={styles.summaryRow}>
+            <View>
+              <Text style={styles.totalLabel}>Total ({cartItems.length} items)</Text>
+              <Text style={styles.totalPrice}>${getTotalPrice().toFixed(2)}</Text>
+            </View>
+            <View style={styles.shippingInfo}>
+              <Text style={styles.shippingText}>
+                {getTotalPrice() > 100 ? '🚚 FREE Shipping' : '+ $9.99 Shipping'}
+              </Text>
+              {getTotalPrice() <= 100 && (
+                <Text style={styles.freeShippingTip}>
+                  Add ${(100 - getTotalPrice()).toFixed(2)} more for FREE shipping
+                </Text>
+              )}
+            </View>
           </View>
+          
           <TouchableOpacity
             style={[styles.checkoutButton, updating && styles.disabledButton]}
-            onPress={checkout}
+            onPress={proceedToCheckout}
             disabled={updating}
           >
+            <Ionicons name="card-outline" size={20} color="#ffffff" />
             <Text style={styles.checkoutButtonText}>
               {updating ? 'Updating...' : 'Proceed to Checkout'}
             </Text>
@@ -317,7 +532,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 10 : 20, // Notch handling
+    paddingTop: Platform.OS === 'ios' ? 10 : 20,
     paddingVertical: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
@@ -342,6 +557,21 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontWeight: '500',
   },
+  guestBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef3c7',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    padding: 12,
+    borderRadius: 8,
+  },
+  guestBannerText: {
+    fontSize: 14,
+    color: '#92400e',
+    marginLeft: 8,
+    flex: 1,
+  },
   guestCartContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -362,12 +592,14 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     lineHeight: 24,
   },
+  guestCartActions: {
+    marginBottom: 16,
+  },
   loginButton: {
     backgroundColor: '#2563eb',
     paddingHorizontal: 32,
     paddingVertical: 12,
     borderRadius: 12,
-    marginBottom: 12,
     minWidth: 200,
     alignItems: 'center',
   },
@@ -394,6 +626,25 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 8,
   },
+  benefitsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: '#f9fafb',
+    marginHorizontal: 16,
+    marginVertical: 16,
+    borderRadius: 12,
+  },
+  benefitItem: {
+    alignItems: 'center',
+  },
+  benefitText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+    fontWeight: '500',
+  },
   emptyState: {
     alignItems: 'center',
     marginTop: 100,
@@ -411,8 +662,11 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
     marginBottom: 24,
+    lineHeight: 22,
   },
   shopButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#2563eb',
     paddingHorizontal: 24,
     paddingVertical: 12,
@@ -422,12 +676,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
   },
   checkoutSection: {
     backgroundColor: '#ffffff',
     paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 120, // Extra padding for fancy bottom nav
+    paddingTop: 20,
+    paddingBottom: 120, // Extra padding for bottom nav
     borderTopWidth: 1,
     borderTopColor: '#f3f4f6',
     shadowColor: '#000',
@@ -439,28 +694,43 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  totalRow: {
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 16,
-    paddingVertical: 8,
   },
   totalLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
+    fontSize: 16,
+    color: '#6b7280',
+    marginBottom: 4,
   },
   totalPrice: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#2563eb',
   },
+  shippingInfo: {
+    alignItems: 'flex-end',
+  },
+  shippingText: {
+    fontSize: 14,
+    color: '#10b981',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  freeShippingTip: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'right',
+  },
   checkoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#16a34a',
     paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
     shadowColor: '#16a34a',
     shadowOffset: {
       width: 0,
@@ -477,8 +747,9 @@ const styles = StyleSheet.create({
   },
   checkoutButtonText: {
     color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 });
 

@@ -20,30 +20,66 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
     name: '',
     brand: '',
     price: '',
+    originalPrice: '',
     imageUrl: '',
+    additionalImages: '',
     description: '',
     condition: 'new',
     category: 'sneakers',
     color: '',
+    material: '',
+    weight: '',
+    manufacturer: '',
+    countryOfOrigin: '',
+    sku: '',
+    tags: '',
+    targetGender: 'unisex',
+    ageGroup: 'adult',
+    season: 'all-season',
+    shoeStyle: 'casual', // FIXED: Using shoeStyle to avoid conflict
+    featured: false,
   });
   const [loading, setLoading] = useState(false);
   const [selectedSizes, setSelectedSizes] = useState([]);
 
-  const availableSizes = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 13, 14];
-  const conditions = ['new', 'like-new', 'good', 'fair'];
-  const categories = ['sneakers', 'boots', 'sandals', 'formal', 'athletic', 'casual'];
+  const availableSizes = [5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 15];
+  const conditions = ['new', 'like-new', 'good', 'fair', 'refurbished'];
+  const categories = ['sneakers', 'boots', 'sandals', 'formal', 'athletic', 'casual', 'hiking', 'running', 'basketball', 'soccer'];
+  const genders = ['men', 'women', 'unisex', 'kids'];
+  const ageGroups = ['adult', 'youth', 'child', 'toddler', 'infant'];
+  const seasons = ['all-season', 'summer', 'winter', 'spring', 'fall'];
+  const shoeStyles = ['casual', 'formal', 'athletic', 'vintage', 'modern', 'luxury']; // FIXED: Renamed variable
 
   useEffect(() => {
     if (shoe) {
+      // Parse additional images back to string
+      const additionalImagesString = shoe.additionalImages ? shoe.additionalImages.join(', ') : '';
+      
+      // Parse tags back to string
+      const tagsString = shoe.tags ? shoe.tags.join(', ') : '';
+
       setFormData({
         name: shoe.name || '',
         brand: shoe.brand || '',
         price: shoe.price?.toString() || '',
+        originalPrice: shoe.originalPrice?.toString() || '',
         imageUrl: shoe.image || '',
+        additionalImages: additionalImagesString,
         description: shoe.description || '',
         condition: shoe.condition || 'new',
         category: shoe.category || 'sneakers',
         color: shoe.color || '',
+        material: shoe.material || '',
+        weight: shoe.weight || '',
+        manufacturer: shoe.manufacturer || '',
+        countryOfOrigin: shoe.countryOfOrigin || '',
+        sku: shoe.sku || '',
+        tags: tagsString,
+        targetGender: shoe.targetGender || 'unisex',
+        ageGroup: shoe.ageGroup || 'adult',
+        season: shoe.season || 'all-season',
+        shoeStyle: shoe.style || 'casual', // FIXED: Load from shoe.style into shoeStyle
+        featured: shoe.featured || false,
       });
       setSelectedSizes(shoe.sizes || []);
     }
@@ -83,11 +119,54 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
 
     setLoading(true);
     try {
+      // Parse additional images
+      const additionalImagesArray = formData.additionalImages
+        .split(',')
+        .map(url => url.trim())
+        .filter(url => url.length > 0);
+
+      // Parse tags
+      const tagsArray = formData.tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0);
+
       await updateDoc(doc(db, 'shoes', shoe.id), {
-        ...formData,
+        // Basic Info
+        name: formData.name.trim(),
+        brand: formData.brand.trim(),
         price: parseFloat(price),
-        image: imageUrl,
+        originalPrice: formData.originalPrice ? parseFloat(formData.originalPrice) : parseFloat(price),
+        
+        // Images
+        image: imageUrl.trim(),
+        additionalImages: additionalImagesArray,
+        
+        // Details
+        description: formData.description.trim(),
+        condition: formData.condition,
+        category: formData.category,
+        color: formData.color.trim(),
+        material: formData.material.trim(),
+        weight: formData.weight.trim(),
+        
+        // Manufacturing
+        manufacturer: formData.manufacturer.trim(),
+        countryOfOrigin: formData.countryOfOrigin.trim(),
+        sku: formData.sku.trim(),
+        
+        // Classification
+        targetGender: formData.targetGender,
+        ageGroup: formData.ageGroup,
+        season: formData.season,
+        style: formData.shoeStyle, // FIXED: Use shoeStyle but save as 'style'
+        
+        // Availability
         sizes: selectedSizes,
+        featured: formData.featured,
+        tags: tagsArray,
+        
+        // Timestamps
         updatedAt: new Date(),
       });
 
@@ -103,6 +182,7 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
           <Text style={styles.errorText}>Shoe not found</Text>
           <TouchableOpacity
             style={styles.backButton}
@@ -166,6 +246,19 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
             </View>
 
             <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
+              <Text style={styles.label}>Original Price ($)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="200"
+                value={formData.originalPrice}
+                onChangeText={(value) => updateFormData('originalPrice', value)}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.label}>Color</Text>
               <TextInput
                 style={styles.input}
@@ -174,9 +267,21 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
                 onChangeText={(value) => updateFormData('color', value)}
               />
             </View>
+
+            <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
+              <Text style={styles.label}>Material</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Leather"
+                value={formData.material}
+                onChangeText={(value) => updateFormData('material', value)}
+              />
+            </View>
           </View>
 
-          {/* Category Selection */}
+          {/* Classification */}
+          <Text style={styles.sectionTitle}>Classification</Text>
+
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Category *</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -195,6 +300,106 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
                       formData.category === category && styles.selectedChipText
                     ]}>
                       {category}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Target Gender *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipContainer}>
+                {genders.map((gender) => (
+                  <TouchableOpacity
+                    key={gender}
+                    style={[
+                      styles.chip,
+                      formData.targetGender === gender && styles.selectedChip
+                    ]}
+                    onPress={() => updateFormData('targetGender', gender)}
+                  >
+                    <Text style={[
+                      styles.chipText,
+                      formData.targetGender === gender && styles.selectedChipText
+                    ]}>
+                      {gender}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Age Group *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipContainer}>
+                {ageGroups.map((age) => (
+                  <TouchableOpacity
+                    key={age}
+                    style={[
+                      styles.chip,
+                      formData.ageGroup === age && styles.selectedChip
+                    ]}
+                    onPress={() => updateFormData('ageGroup', age)}
+                  >
+                    <Text style={[
+                      styles.chipText,
+                      formData.ageGroup === age && styles.selectedChipText
+                    ]}>
+                      {age}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Style *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipContainer}>
+                {shoeStyles.map((styleOption) => ( // FIXED: Use shoeStyles array
+                  <TouchableOpacity
+                    key={styleOption}
+                    style={[
+                      styles.chip,
+                      formData.shoeStyle === styleOption && styles.selectedChip // FIXED: Use shoeStyle
+                    ]}
+                    onPress={() => updateFormData('shoeStyle', styleOption)} // FIXED: Use shoeStyle
+                  >
+                    <Text style={[
+                      styles.chipText,
+                      formData.shoeStyle === styleOption && styles.selectedChipText // FIXED: Use shoeStyle
+                    ]}>
+                      {styleOption}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Season *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipContainer}>
+                {seasons.map((season) => (
+                  <TouchableOpacity
+                    key={season}
+                    style={[
+                      styles.chip,
+                      formData.season === season && styles.selectedChip
+                    ]}
+                    onPress={() => updateFormData('season', season)}
+                  >
+                    <Text style={[
+                      styles.chipText,
+                      formData.season === season && styles.selectedChipText
+                    ]}>
+                      {season}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -252,16 +457,103 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
             </View>
           </View>
 
-          {/* Image and Description */}
+          {/* Additional Details */}
+          <Text style={styles.sectionTitle}>Additional Details</Text>
+
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.label}>Weight</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="300g"
+                value={formData.weight}
+                onChangeText={(value) => updateFormData('weight', value)}
+              />
+            </View>
+
+            <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
+              <Text style={styles.label}>SKU</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="SKU-001"
+                value={formData.sku}
+                onChangeText={(value) => updateFormData('sku', value)}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.label}>Manufacturer</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Nike Inc."
+                value={formData.manufacturer}
+                onChangeText={(value) => updateFormData('manufacturer', value)}
+              />
+            </View>
+
+            <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
+              <Text style={styles.label}>Country of Origin</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Vietnam"
+                value={formData.countryOfOrigin}
+                onChangeText={(value) => updateFormData('countryOfOrigin', value)}
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Tags (comma separated)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="running, lightweight, breathable"
+              value={formData.tags}
+              onChangeText={(value) => updateFormData('tags', value)}
+            />
+          </View>
+
+          {/* Featured Toggle */}
+          <View style={styles.inputContainer}>
+            <TouchableOpacity
+              style={[styles.toggleContainer, formData.featured && styles.toggleActive]}
+              onPress={() => updateFormData('featured', !formData.featured)}
+            >
+              <Ionicons 
+                name={formData.featured ? "checkmark-circle" : "checkmark-circle-outline"} 
+                size={24} 
+                color={formData.featured ? "#2563eb" : "#6b7280"} 
+              />
+              <Text style={[styles.toggleText, formData.featured && styles.toggleActiveText]}>
+                Featured Product
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Media & Description */}
           <Text style={styles.sectionTitle}>Media & Description</Text>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Image URL *</Text>
+            <Text style={styles.label}>Main Image URL *</Text>
             <TextInput
               style={styles.input}
               placeholder="https://example.com/shoe-image.jpg"
               value={formData.imageUrl}
               onChangeText={(value) => updateFormData('imageUrl', value)}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Additional Images (comma separated URLs)</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="https://example.com/image1.jpg, https://example.com/image2.jpg"
+              value={formData.additionalImages}
+              onChangeText={(value) => updateFormData('additionalImages', value)}
+              multiline
+              numberOfLines={3}
               autoCapitalize="none"
             />
           </View>
@@ -296,7 +588,9 @@ const EditShoeScreen = ({ onNavigate, user, shoe }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    marginTop:20,
     backgroundColor: '#ffffff',
+    marginBottom:20
   },
   header: {
     flexDirection: 'row',
@@ -399,6 +693,29 @@ const styles = StyleSheet.create({
   selectedSizeChipText: {
     color: '#ffffff',
   },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  toggleActive: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#2563eb',
+  },
+  toggleText: {
+    fontSize: 16,
+    color: '#6b7280',
+    marginLeft: 12,
+    fontWeight: '500',
+  },
+  toggleActiveText: {
+    color: '#2563eb',
+  },
   updateButton: {
     backgroundColor: '#16a34a',
     paddingVertical: 16,
@@ -424,6 +741,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#6b7280',
     marginBottom: 24,
+    marginTop: 16,
   },
   backButton: {
     backgroundColor: '#2563eb',
