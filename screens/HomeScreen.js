@@ -18,18 +18,19 @@ import { collection, onSnapshot, orderBy, query, doc, getDoc } from 'firebase/fi
 import { db } from '../firebase/config';
 import ShoeCard from '../components/ShoeCard';
 import BottomNavigation from '../components/BottomNavigation';
-import FilterModal from '../components/FilterModal';
+import ShoeFinderModal from '../components/ShoeFinderModal';
+// import FilterModal from '../components/FilterModal';
 
 const HomeScreen = ({ onNavigate, user }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [shoes, setShoes] = useState([]);
   const [filteredShoes, setFilteredShoes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showShoeFinder, setShowShoeFinder] = useState(false);
+  // const [showFilterModal, setShowFilterModal] = useState(false);
   const [sortBy, setSortBy] = useState('newest');
   const [userRole, setUserRole] = useState(null);
   
-  // Enhanced filter states - FIXED: Set inStock to false by default
   const [filters, setFilters] = useState({
     brands: [],
     priceRange: { min: 0, max: 1000 },
@@ -44,13 +45,13 @@ const HomeScreen = ({ onNavigate, user }) => {
     styles: [],
     rating: 0,
     featured: false,
-    inStock: false, // FIXED: Changed to false so all shoes show by default
+    inStock: false,
   });
 
   useEffect(() => {
     loadUserRole();
     const unsubscribe = loadShoes();
-    return () => unsubscribe && unsubscribe(); // Cleanup subscription
+    return () => unsubscribe && unsubscribe();
   }, [user]);
 
   useEffect(() => {
@@ -78,7 +79,7 @@ const HomeScreen = ({ onNavigate, user }) => {
           id: doc.id,
           ...doc.data()
         }));
-        console.log('Loaded shoes:', shoesData.length); // Debug log
+        console.log('Loaded shoes:', shoesData.length);
         setShoes(shoesData);
         setLoading(false);
       }, (error) => {
@@ -95,7 +96,6 @@ const HomeScreen = ({ onNavigate, user }) => {
 
   const applyFilters = () => {
     let filtered = shoes.filter(shoe => {
-      // Search filter
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = !searchQuery || 
                            shoe.name?.toLowerCase().includes(searchLower) ||
@@ -105,55 +105,34 @@ const HomeScreen = ({ onNavigate, user }) => {
                            shoe.category?.toLowerCase().includes(searchLower) ||
                            shoe.color?.toLowerCase().includes(searchLower);
       
-      // Brand filter
       const matchesBrand = filters.brands.length === 0 || filters.brands.includes(shoe.brand);
       
-      // Price filter - FIXED: Better price filtering
       const shoePrice = parseFloat(shoe.price) || 0;
       const matchesPrice = shoePrice >= filters.priceRange.min && 
                           (filters.priceRange.max === 1000 ? true : shoePrice <= filters.priceRange.max);
       
-      // Size filter
       const matchesSize = filters.sizes.length === 0 || 
                          (shoe.sizes && shoe.sizes.some(size => filters.sizes.includes(size)));
       
-      // Condition filter
       const matchesCondition = filters.conditions.length === 0 || filters.conditions.includes(shoe.condition);
-      
-      // Category filter
       const matchesCategory = filters.categories.length === 0 || filters.categories.includes(shoe.category);
       
-      // Color filter - FIXED: Better color matching
       const matchesColor = filters.colors.length === 0 || 
                           (shoe.color && filters.colors.some(color => 
                             shoe.color.toLowerCase().includes(color.toLowerCase())
                           ));
       
-      // Material filter - FIXED: Better material matching
       const matchesMaterial = filters.materials.length === 0 || 
                              (shoe.material && filters.materials.some(material => 
                                shoe.material.toLowerCase().includes(material.toLowerCase())
                              ));
       
-      // Gender filter
       const matchesGender = filters.genders.length === 0 || filters.genders.includes(shoe.targetGender);
-      
-      // Age group filter
       const matchesAge = filters.ageGroups.length === 0 || filters.ageGroups.includes(shoe.ageGroup);
-      
-      // Season filter
       const matchesSeason = filters.seasons.length === 0 || filters.seasons.includes(shoe.season);
-      
-      // Style filter
       const matchesStyle = filters.styles.length === 0 || filters.styles.includes(shoe.style);
-      
-      // Rating filter
       const matchesRating = filters.rating === 0 || (shoe.rating || 0) >= filters.rating;
-      
-      // Featured filter
       const matchesFeatured = !filters.featured || shoe.featured;
-      
-      // Stock filter - FIXED: Only filter if inStock is true
       const matchesStock = !filters.inStock || shoe.inStock !== false;
 
       return matchesSearch && matchesBrand && matchesPrice && matchesSize && 
@@ -203,7 +182,7 @@ const HomeScreen = ({ onNavigate, user }) => {
         break;
     }
 
-    console.log('Filtered shoes:', filtered.length); // Debug log
+    console.log('Filtered shoes:', filtered.length);
     setFilteredShoes(filtered);
   };
 
@@ -222,7 +201,7 @@ const HomeScreen = ({ onNavigate, user }) => {
       styles: [],
       rating: 0,
       featured: false,
-      inStock: false, // FIXED: Keep as false
+      inStock: false,
     });
     setSearchQuery('');
     setSortBy('newest');
@@ -247,7 +226,6 @@ const HomeScreen = ({ onNavigate, user }) => {
 
   const activeFiltersCount = getActiveFiltersCount();
 
-  // Get unique values for filters with safety checks - FIXED: Better error handling
   const getUniqueValues = () => {
     if (!shoes || shoes.length === 0) {
       return {
@@ -312,7 +290,7 @@ const HomeScreen = ({ onNavigate, user }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
-      {/* Header with proper spacing for notch */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View>
@@ -323,7 +301,7 @@ const HomeScreen = ({ onNavigate, user }) => {
           </View>
         </View>
 
-        {/* Search and Filter Row */}
+        {/* Search and Finder Row */}
         <View style={styles.searchFilterRow}>
           <View style={styles.searchContainer}>
             <Ionicons name="search-outline" size={20} color="#6b7280" style={styles.searchIcon} />
@@ -339,17 +317,40 @@ const HomeScreen = ({ onNavigate, user }) => {
               </TouchableOpacity>
             )}
           </View>
+          
+          {/* Shoe Finder Button */}
           <TouchableOpacity
-            style={[styles.filterButton, activeFiltersCount > 0 && styles.activeFilterButton]}
-            onPress={() => setShowFilterModal(true)}
+            style={styles.finderButton}
+            onPress={() => setShowShoeFinder(true)}
           >
-            <Ionicons name="options-outline" size={20} color={activeFiltersCount > 0 ? "#ffffff" : "#6b7280"} />
+            <Ionicons name="sparkles-outline" size={20} color="#ffffff" />
             {activeFiltersCount > 0 && (
               <View style={styles.filterBadge}>
                 <Text style={styles.filterBadgeText}>{activeFiltersCount}</Text>
               </View>
             )}
           </TouchableOpacity>
+        </View>
+
+        {/* Quick Action Buttons */}
+        <View style={styles.quickActionsContainer}>
+          {/* <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => setShowShoeFinder(true)}
+          >
+            <Ionicons name="search-outline" size={16} color="#2563eb" />
+            <Text style={styles.quickActionText}>Find My Shoes</Text>
+          </TouchableOpacity> */}
+          
+          {activeFiltersCount > 0 && (
+            <TouchableOpacity
+              style={styles.clearFiltersButton}
+              onPress={clearFilters}
+            >
+              <Ionicons name="refresh-outline" size={16} color="#ef4444" />
+              <Text style={styles.clearFiltersButtonText}>Clear Filters</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Quick Sort Options */}
@@ -381,10 +382,13 @@ const HomeScreen = ({ onNavigate, user }) => {
         <Text style={styles.resultsText}>
           {filteredShoes.length} shoe{filteredShoes.length !== 1 ? 's' : ''} found
         </Text>
-        {(activeFiltersCount > 0 || searchQuery.length > 0) && (
-          <TouchableOpacity onPress={clearFilters}>
-            <Text style={styles.clearFiltersText}>Clear all filters</Text>
-          </TouchableOpacity>
+        {activeFiltersCount > 0 && (
+          <View style={styles.activeFiltersContainer}>
+            <Ionicons name="filter" size={14} color="#2563eb" />
+            <Text style={styles.activeFiltersText}>
+              {activeFiltersCount} filter{activeFiltersCount !== 1 ? 's' : ''} applied
+            </Text>
+          </View>
         )}
       </View>
 
@@ -403,38 +407,56 @@ const HomeScreen = ({ onNavigate, user }) => {
         </View>
         {filteredShoes.length === 0 && (
           <View style={styles.emptyState}>
-            <Ionicons name="sad-outline" size={64} color="#9ca3af" />
+            <Ionicons name="footsteps-outline" size={64} color="#9ca3af" />
             <Text style={styles.emptyText}>
-              {shoes.length === 0 ? 'No shoes available' : 'No shoes match your filters'}
+              {shoes.length === 0 ? 'No shoes available' : 'No shoes match your criteria'}
             </Text>
             <Text style={styles.emptySubtext}>
               {shoes.length === 0 
                 ? 'Be the first to add a shoe to the marketplace!' 
-                : 'Try adjusting your filters or search terms'
+                : activeFiltersCount > 0 
+                  ? 'Try using our Shoe Finder or adjusting your filters'
+                  : 'Try using our Shoe Finder to discover perfect shoes for you'
               }
             </Text>
-            {user && (
+            
+            {shoes.length === 0 && user ? (
               <TouchableOpacity
                 style={styles.addShoeButton}
                 onPress={() => onNavigate('addShoe')}
               >
-                <Text style={styles.addShoeButtonText}>
-                  {shoes.length === 0 ? 'Add First Shoe' : 'Add New Shoe'}
-                </Text>
+                <Ionicons name="add-circle" size={20} color="#ffffff" />
+                <Text style={styles.addShoeButtonText}>Add First Shoe</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.shoeFinderButton}
+                onPress={() => setShowShoeFinder(true)}
+              >
+                <Ionicons name="search" size={20} color="#ffffff" />
+                <Text style={styles.shoeFinderButtonText}>Find My Shoes</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
       </ScrollView>
 
-      {/* Filter Modal */}
-      <FilterModal
+      {/* Shoe Finder Modal */}
+      <ShoeFinderModal
+        visible={showShoeFinder}
+        onClose={() => setShowShoeFinder(false)}
+        setFilters={setFilters}
+        uniqueValues={uniqueValues}
+      />
+
+      {/* Commented out FilterModal */}
+      {/* <FilterModal
         visible={showFilterModal}
         onClose={() => setShowFilterModal(false)}
         filters={filters}
         setFilters={setFilters}
         uniqueValues={uniqueValues}
-      />
+      /> */}
 
       {/* Bottom Navigation */}
       <BottomNavigation onNavigate={onNavigate} currentScreen="home" user={user} />
@@ -445,9 +467,7 @@ const HomeScreen = ({ onNavigate, user }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // marginTop:20,
     backgroundColor: '#ffffff',
-    // marginBottom:5
   },
   loadingContainer: {
     flex: 1,
@@ -462,10 +482,10 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 10 : 20, // Extra padding for notch
+    paddingTop: Platform.OS === 'ios' ? 10 : 20,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    backgroundColor:'#e0e0e0',
+    backgroundColor: '#e0e0e0',
     borderBottomColor: '#f3f4f6',
   },
   headerTop: {
@@ -483,39 +503,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6b7280',
     marginTop: 4,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  addButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 20,
-    padding: 12,
-    shadowColor: '#2563eb',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  loginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#2563eb',
-  },
-  loginButtonText: {
-    color: '#2563eb',
-    marginLeft: 6,
-    fontWeight: '600',
-    fontSize: 14,
   },
   searchFilterRow: {
     flexDirection: 'row',
@@ -539,14 +526,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
-  filterButton: {
-    backgroundColor: '#f3f4f6',
+  finderButton: {
+    backgroundColor: '#2563eb',
     borderRadius: 12,
     padding: 12,
     position: 'relative',
-  },
-  activeFilterButton: {
-    backgroundColor: '#2563eb',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   filterBadge: {
     position: 'absolute',
@@ -563,6 +552,44 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  quickActionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  quickActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+  },
+  quickActionText: {
+    fontSize: 14,
+    color: '#2563eb',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  clearFiltersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  clearFiltersButtonText: {
+    fontSize: 14,
+    color: '#ef4444',
+    fontWeight: '600',
+    marginLeft: 6,
   },
   sortContainer: {
     marginBottom: 8,
@@ -598,10 +625,21 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontWeight: '500',
   },
-  clearFiltersText: {
-    fontSize: 14,
+  activeFiltersContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+  },
+  activeFiltersText: {
+    fontSize: 12,
     color: '#2563eb',
-    fontWeight: '500',
+    fontWeight: '600',
+    marginLeft: 4,
   },
   shoesContainer: {
     flex: 1,
@@ -612,7 +650,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    paddingBottom: 120, // Extra padding for fancy bottom nav
+    paddingBottom: 120,
   },
   emptyState: {
     alignItems: 'center',
@@ -624,6 +662,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#6b7280',
     marginTop: 16,
+    textAlign: 'center',
   },
   emptySubtext: {
     fontSize: 14,
@@ -631,17 +670,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 24,
+    lineHeight: 20,
   },
   addShoeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#2563eb',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   addShoeButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
+  },
+  shoeFinderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  shoeFinderButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 
